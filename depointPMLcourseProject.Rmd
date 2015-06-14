@@ -1,0 +1,68 @@
+---
+title: "PML Course Project"
+author: "DePoint"
+date: "Sunday, June 14, 2015"
+output: html_document
+---
+
+##Intro
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. These are captured in the (outcome) variable called "classe"
+
+## Setup the Environment
+```{r cache=TRUE}
+library(caret);library(rattle);library(dplyr)
+```
+##get the data and bring it into memory only
+```{r cache=TRUE}
+trainUrl <-"http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.csv(url(trainUrl))  
+testing <- read.csv(url(testUrl))
+```
+##clean the data
+lets examine missing values, near zero variables, redundant variables, etc
+```{r}
+nsv <- nearZeroVar(training,saveMetrics=TRUE)
+nsvDropList <- names(training) %in% as.list(row.names(subset(nsv, nzv=='TRUE',select=nzv)))
+slimTraining <- training[!nsvDropList]
+#crunch through again to remove all missing
+slimTraining <- slimTraining[, colSums(is.na(slimTraining)) == 0] 
+```
+
+After cycling through some modeling, these variables cause some issues. lets remove
+```{r}
+slimTraining <- slimTraining[, !grepl("^X", names(slimTraining))]
+#slimTraining <- select(slimTraining,
+#                 -c(raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp))
+dim(slimTraining);str(slimTraining)
+```
+##Partition the data
+Create a training and validation data set out of the Slim Training data set
+```{r}
+set.seed(8675309)
+trainflag <- createDataPartition(slimTraining$classe, p=0.70, list=FALSE)
+modelingData <- slimTraining[trainflag, ]
+validationData <- slimTraining[-trainflag, ]
+```
+##Modeling the Data
+we wish to predict the manner in which people exercise, using classe as the dependent variable
+```{r}
+fit1 <- train(classe ~ .,method="rpart",data=modelingData)
+rattle::fancyRpartPlot(fit1$finalModel)
+predFit1 <- predict(fit1, validationData)
+confusionMatrix(validationData$classe, predFit1)
+#I had to really mess with this RF to make it work on my $500 computer. frown
+fit2 <- train(classe ~ ., data=modelingData, method="rf", trControl=trainControl(method="cv", 5), ntree=250)
+predFit2 <- predict(fit2, validationData)
+confusionMatrix(validationData$classe, predFit2)
+```
+
+the accuracy on the fit2 model, a randomforest, was much higher at 0.99. lets choose that one.
+Create predictions based upon the testing data of 20 observations
+```{r}
+scoreTest <- predict(fit2, testing)
+scoreTest
+```
